@@ -319,9 +319,9 @@ app.post("/process", async (req, res) => {
       claims = newClaimsData.claims || [];
 
       // Re-verify
-      verifyRes = await axios.post(`${process.env.NLI_SERVICE_URL || "http://localhost:5001"}/verify`, { 
-        original: text, 
-        claims 
+      verifyRes = await axios.post(`${process.env.NLI_SERVICE_URL || "http://localhost:5001"}/verify`, {
+        original: text,
+        claims
       });
       verification = verifyRes.data;
     }
@@ -343,7 +343,9 @@ app.post("/process", async (req, res) => {
   }
 });
 
-app.listen(5000, () => {
-  console.log("✅ Backend running on http://localhost:5000");
-  console.log("🚀 Feynman AI System ready - Claims now extracted from Simplified Explanation");
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Backend running on port ${PORT}`);
+  console.log("🚀 Feynman AI System ready");
 });
