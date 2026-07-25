@@ -301,7 +301,7 @@ app.post("/process", async (req, res) => {
     let claims = claimsData.claims || [];
 
     // 3. Verify claims against the ORIGINAL text
-    let verifyRes = await axios.post("http://localhost:5001/verify", {
+    let verifyRes = await axios.post(`${process.env.NLI_SERVICE_URL || "http://localhost:5001"}/verify`, {
       original: text,
       claims
     });
@@ -319,7 +319,7 @@ app.post("/process", async (req, res) => {
       claims = newClaimsData.claims || [];
 
       // Re-verify
-      verifyRes = await axios.post("http://localhost:5001/verify", { 
+      verifyRes = await axios.post(`${process.env.NLI_SERVICE_URL || "http://localhost:5001"}/verify`, { 
         original: text, 
         claims 
       });
