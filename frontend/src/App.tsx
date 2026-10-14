@@ -27,9 +27,9 @@ interface FullResult {
 
 const LOADING_STEPS = [
   { icon: "🧠", label: "Applying Feynman Technique...", sub: "Breaking down complex concepts into simple language" },
-  { icon: "🔍", label: "Extracting key claims...",      sub: "Identifying factual statements from the explanation" },
-  { icon: "⚖️",  label: "Verifying with NLI model...", sub: "Checking accuracy using DeBERTa v3 AI model" },
-  { icon: "📝",  label: "Generating quiz questions...", sub: "Creating 4 comprehension questions for you" },
+  { icon: "🔍", label: "Extracting key claims...", sub: "Identifying factual statements from the explanation" },
+  { icon: "⚖️", label: "Verifying with NLI model...", sub: "Checking accuracy using DeBERTa v3 AI model" },
+  { icon: "📝", label: "Generating quiz questions...", sub: "Creating 4 comprehension questions for you" },
 ];
 
 function LoadingOverlay({ step }: { step: number }) {
@@ -118,7 +118,7 @@ function LoadingOverlay({ step }: { step: number }) {
 
 function ScoreBadge({ score }: { score: number }) {
   const color = score >= 80 ? "var(--green)" : score >= 60 ? "var(--yellow)" : "var(--red)";
-  const bg    = score >= 80 ? "var(--green-soft)" : score >= 60 ? "var(--yellow-soft)" : "var(--red-soft)";
+  const bg = score >= 80 ? "var(--green-soft)" : score >= 60 ? "var(--yellow-soft)" : "var(--red-soft)";
   const label = score >= 80 ? "High Accuracy" : score >= 60 ? "Moderate" : "Low Accuracy";
   return (
     <div style={{
@@ -136,9 +136,9 @@ function ScoreBadge({ score }: { score: number }) {
 
 function StatusChip({ status }: { status: string }) {
   const map: Record<string, { color: string; bg: string; icon: string }> = {
-    SUPPORTED:    { color: "var(--green)",  bg: "var(--green-soft)",  icon: "✓" },
-    CONTRADICTED: { color: "var(--red)",    bg: "var(--red-soft)",    icon: "✕" },
-    NEUTRAL:      { color: "var(--yellow)", bg: "var(--yellow-soft)", icon: "~" },
+    SUPPORTED: { color: "var(--green)", bg: "var(--green-soft)", icon: "✓" },
+    CONTRADICTED: { color: "var(--red)", bg: "var(--red-soft)", icon: "✕" },
+    NEUTRAL: { color: "var(--yellow)", bg: "var(--yellow-soft)", icon: "~" },
   };
   const s = map[status] ?? map["NEUTRAL"];
   return (
@@ -355,7 +355,7 @@ function App() {
           margin: "0 auto 32px",
           lineHeight: 1.7,
         }}>
-          Paste any academic text — the AI will simplify it like you're 10,
+          Paste any academic text and the AI will simplify it,
           verify facts with NLI, and generate a comprehension quiz.
         </p>
 
@@ -558,8 +558,8 @@ function App() {
                   {result.verification.support_score >= 80
                     ? "Great! The simplified explanation closely matches the original text."
                     : result.verification.support_score >= 60
-                    ? "Moderate accuracy — some claims may need review."
-                    : "Low accuracy — the explanation may contain unsupported statements."}
+                      ? "Moderate accuracy — some claims may need review."
+                      : "Low accuracy — the explanation may contain unsupported statements."}
                 </p>
               </div>
 
@@ -610,14 +610,14 @@ function App() {
 
               <div style={{ display: "grid", gap: 24 }}>
                 {result.quiz.questions.map((q, index) => {
-                  const LETTERS     = ["A", "B", "C", "D"];
-                  const userAnswer  = selectedAnswers[index];
+                  const LETTERS = ["A", "B", "C", "D"];
+                  const userAnswer = selectedAnswers[index];
                   // Normalise answer: backend may return "A" or "A. some text"
-                  const correctAns  = (q.answer || "").charAt(0).toUpperCase();
-                  const isCorrect   = userAnswer === correctAns;
+                  const correctAns = (q.answer || "").charAt(0).toUpperCase();
+                  const isCorrect = userAnswer === correctAns;
 
                   return (
-                    <div key={`${index}-${q.question.slice(0,20)}`} style={{
+                    <div key={`${index}-${q.question.slice(0, 20)}`} style={{
                       background: "var(--surface2)", border: "1px solid var(--border)",
                       borderRadius: "var(--radius-sm)", padding: "24px 28px",
                       animation: `slide-in 0.4s ease ${index * 0.1}s both`,
@@ -642,20 +642,20 @@ function App() {
                         {q.options.map((option, i) => {
                           // Always use positional A/B/C/D — never rely on option text's first char
                           const optionLetter = LETTERS[i];
-                          const isSelected   = userAnswer === optionLetter;
-                          const isRight      = optionLetter === correctAns;
+                          const isSelected = userAnswer === optionLetter;
+                          const isRight = optionLetter === correctAns;
 
-                          let bg     = "var(--surface)";
+                          let bg = "var(--surface)";
                           let border = "1px solid var(--border)";
-                          let color  = "var(--text)";
+                          let color = "var(--text)";
 
                           if (showResults) {
-                            if (isRight)                { bg = "var(--green-soft)";  border = "1px solid var(--green)";  color = "var(--green)"; }
-                            else if (isSelected)        { bg = "var(--red-soft)";    border = "1px solid var(--red)";    color = "var(--red)"; }
+                            if (isRight) { bg = "var(--green-soft)"; border = "1px solid var(--green)"; color = "var(--green)"; }
+                            else if (isSelected) { bg = "var(--red-soft)"; border = "1px solid var(--red)"; color = "var(--red)"; }
                           } else if (isSelected) {
-                            bg     = "rgba(99,102,241,0.12)";
+                            bg = "rgba(99,102,241,0.12)";
                             border = "1px solid var(--accent)";
-                            color  = "#a5b4fc";
+                            color = "#a5b4fc";
                           }
 
                           return (
@@ -675,7 +675,7 @@ function App() {
                               }}
                             >
                               <span>{option}</span>
-                              {showResults && isRight  && <span style={{ fontSize: "1.1rem" }}>✓</span>}
+                              {showResults && isRight && <span style={{ fontSize: "1.1rem" }}>✓</span>}
                               {showResults && isSelected && !isRight && <span style={{ fontSize: "1.1rem" }}>✕</span>}
                             </div>
                           );

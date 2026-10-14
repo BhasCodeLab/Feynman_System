@@ -191,7 +191,7 @@ async function callOpenAI(systemPrompt, userText, retryCount = 0) {
         ],
         response_format: { type: "json_object" },
         temperature: 0.7,
-        max_tokens: 2000
+        max_tokens: 8192
       },
       {
         headers: {
@@ -208,7 +208,12 @@ async function callOpenAI(systemPrompt, userText, retryCount = 0) {
     if (jsonMatch) content = jsonMatch[0];
 
     console.log("✅ Gemini succeeded");
-    return JSON.parse(content);
+    try {
+      return JSON.parse(content);
+    } catch (parseErr) {
+      console.error("❌ Gemini JSON parse failed. Raw content (first 300 chars):", content.slice(0, 300));
+      throw parseErr;
+    }
 
   } catch (err) {
     const status = err.response?.status;
@@ -227,14 +232,14 @@ async function callOpenAI(systemPrompt, userText, retryCount = 0) {
         const groqResponse = await axios.post(
           "https://api.groq.com/openai/v1/chat/completions",
           {
-            model: "llama-3.3-70b-versatile",
+            model: "llama3-70b-8192",
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: userText }
             ],
             response_format: { type: "json_object" },
             temperature: 0.7,
-            max_tokens: 2000
+            max_tokens: 8192
           },
           {
             headers: {
@@ -251,7 +256,12 @@ async function callOpenAI(systemPrompt, userText, retryCount = 0) {
         if (jsonMatch) content = jsonMatch[0];
 
         console.log("✅ Groq fallback succeeded");
-        return JSON.parse(content);
+        try {
+          return JSON.parse(content);
+        } catch (parseErr) {
+          console.error("❌ Groq JSON parse failed. Raw content (first 300 chars):", content.slice(0, 300));
+          throw parseErr;
+        }
 
       } catch (groqErr) {
         console.error("❌ Groq fallback also failed:", groqErr.message);
