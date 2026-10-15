@@ -189,7 +189,6 @@ async function callOpenAI(systemPrompt, userText, retryCount = 0) {
           { role: "system", content: systemPrompt },
           { role: "user", content: userText }
         ],
-        response_format: { type: "json_object" },
         temperature: 0.7,
         max_tokens: 8192
       },
@@ -237,7 +236,6 @@ async function callOpenAI(systemPrompt, userText, retryCount = 0) {
               { role: "system", content: systemPrompt },
               { role: "user", content: userText }
             ],
-            response_format: { type: "json_object" },
             temperature: 0.7,
             max_tokens: 8192
           },

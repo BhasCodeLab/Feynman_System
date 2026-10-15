@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from sentence_transformers import SentenceTransformer, util
 from transformers import pipeline
 import re
 
 app = Flask(__name__)
+CORS(app)  # Allow cross-origin requests from backend
 
 # MODEL LOADING 
 # Load models once at startup
