@@ -21,6 +21,21 @@ print("[OK] Models loaded successfully:")
 print("   - Embedder: all-MiniLM-L6-v2")
 print("   - NLI Model: cross-encoder/nli-deberta-v3-small")
 
+@app.route('/health', methods=['GET'])
+def health():
+    model = nli.model
+    return jsonify({
+        "status": "ok",
+        "embedder": "sentence-transformers/all-MiniLM-L6-v2",
+        "nli_model": "cross-encoder/nli-deberta-v3-small",
+        "nli_revision": getattr(model.config, "_commit_hash", None),
+        "id2label": model.config.id2label,
+        "retrieval_top_k": 2,
+        "device": str(nli.device),
+        "evaluation_scope": "retrieval-plus-NLI"
+    })
+
+
 @app.route('/verify', methods=['POST'])
 def verify():
     data = request.json

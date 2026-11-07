@@ -1,6 +1,9 @@
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
 require("dotenv").config();
 
 const app = express();
@@ -174,7 +177,24 @@ function isTooSimilarToOriginal(original, simplified) {
 }
 
 // ==================== CALL LLM WITH PROPER FALLBACK ====================
-async function callOpenAI(systemPrompt, userText, retryCount = 0) {
+function saveEvaluation(evaluation) {
+  if (!process.env.EVALUATION_LOG_DIR) return;
+  fs.mkdirSync(process.env.EVALUATION_LOG_DIR, { recursive: true });
+  const filename = path.join(process.env.EVALUATION_LOG_DIR, evaluation.request_id + ".json");
+  fs.writeFileSync(filename, JSON.stringify(evaluation, null, 2), { flag: "w" });
+}
+
+function recordAttempt(evaluation, provider, model, outcome, error, response) {
+  if (!evaluation) return;
+  evaluation.llm_attempts.push({
+    stage: evaluation.current_stage, provider, model, outcome,
+    error: error ? { status: error.response?.status || null, message: error.message } : null,
+    response: response || null
+  });
+  saveEvaluation(evaluation);
+}
+
+async function callOpenAI(systemPrompt, userText, evaluation = null) {
   const MAX_RETRIES = 2;
 
   // Try Gemini first
@@ -208,13 +228,16 @@ async function callOpenAI(systemPrompt, userText, retryCount = 0) {
 
     console.log("✅ Gemini succeeded");
     try {
-      return JSON.parse(content);
+      const parsed = JSON.parse(content);
+      recordAttempt(evaluation, "Gemini", "gemini-2.5-flash", "success", null, parsed);
+      return parsed;
     } catch (parseErr) {
       console.error("❌ Gemini JSON parse failed. Raw content (first 300 chars):", content.slice(0, 300));
       throw parseErr;
     }
 
   } catch (err) {
+    recordAttempt(evaluation, "Gemini", "gemini-2.5-flash", "failure", err);
     const status = err.response?.status;
 
     if (status === 429) {
@@ -255,13 +278,16 @@ async function callOpenAI(systemPrompt, userText, retryCount = 0) {
 
         console.log("✅ Groq fallback succeeded");
         try {
-          return JSON.parse(content);
+          const parsed = JSON.parse(content);
+          recordAttempt(evaluation, "Groq", "llama3-70b-8192", "success", null, parsed);
+          return parsed;
         } catch (parseErr) {
           console.error("❌ Groq JSON parse failed. Raw content (first 300 chars):", content.slice(0, 300));
           throw parseErr;
         }
 
       } catch (groqErr) {
+        recordAttempt(evaluation, "Groq", "llama3-70b-8192", "failure", groqErr);
         console.error("❌ Groq fallback also failed:", groqErr.message);
       }
     } else {
@@ -277,83 +303,125 @@ async function callOpenAI(systemPrompt, userText, retryCount = 0) {
   }
 }
 
-// MAIN PROCESS ENDPOINT 
+const evaluationConfig = () => ({
+  support_threshold: 80,
+  temperature: 0.7,
+  max_tokens: 8192,
+  primary_model: "gemini-2.5-flash",
+  fallback_model: "llama3-70b-8192",
+  nli_service_url: process.env.NLI_SERVICE_URL || "http://localhost:5001",
+  prompts: {
+    simplifier: SIMPLIFIER_PROMPT, rewrite: SIMPLIFIER_REWRITE_PROMPT,
+    claims: CLAIM_EXTRACTION_PROMPT, regeneration: REGENERATION_PROMPT, quiz: QUIZ_PROMPT
+  },
+  server_sha256: crypto.createHash("sha256").update(fs.readFileSync(__filename)).digest("hex")
+});
+
+app.get("/health", (req, res) => res.json({ status: "ok" }));
+if (process.env.EVALUATION_LOG_DIR) {
+  app.get("/evaluation/config", (req, res) => res.json(evaluationConfig()));
+}
+
 app.post("/process", async (req, res) => {
-  const { text } = req.body;
-
-  if (!text || text.trim().length < 50) {
-    return res.status(400).json({ error: "Please provide sufficient text" });
+  const { text } = req.body || {};
+  if (typeof text !== "string" || text.trim().length < 50) {
+    return res.status(400).json({ error: "Please provide at least 50 characters of academic text" });
   }
-
+  const evaluation = {
+    request_id: crypto.randomUUID(),
+    run_id: typeof req.body.run_id === "string" ? req.body.run_id : null,
+    started_at: new Date().toISOString(),
+    source_text: text,
+    source_sha256: crypto.createHash("sha256").update(text).digest("hex"),
+    config: evaluationConfig(),
+    llm_attempts: [],
+    initial: null,
+    final: null,
+    regenerated: false,
+    regeneration_completed: false,
+    current_stage: "simplification"
+  };
+  const started = performance.now();
+  const call = (stage, prompt, input) => {
+    evaluation.current_stage = stage;
+    saveEvaluation(evaluation);
+    return callOpenAI(prompt, input, evaluation);
+  };
+  const verify = async (stage, claims) => {
+    evaluation.current_stage = stage;
+    saveEvaluation(evaluation);
+    return (await axios.post(
+      evaluation.config.nli_service_url + "/verify", { original: text, claims }
+    )).data;
+  };
   try {
-    console.log("📝 Processing text...");
-
-    // 1. Simplify the text
-    const simplified = await callOpenAI(SIMPLIFIER_PROMPT, text);
-
+    const simplified = await call("simplification", SIMPLIFIER_PROMPT, text);
     if (isTooSimilarToOriginal(text, simplified.simplified_explanation)) {
-      console.log("🔄 Simplified text too similar to source. Rewriting in easier terms...");
-
-      const rewritten = await callOpenAI(
-        SIMPLIFIER_REWRITE_PROMPT + text,
-        simplified.simplified_explanation
+      const rewritten = await call(
+        "wording_rewrite", SIMPLIFIER_REWRITE_PROMPT + text, simplified.simplified_explanation
       );
-
       if (rewritten?.simplified_explanation) {
         simplified.simplified_explanation = rewritten.simplified_explanation;
       }
     }
-
-    // 2. Extract claims from the SIMPLIFIED explanation (This is the key fix)
-    const claimsData = await callOpenAI(CLAIM_EXTRACTION_PROMPT, simplified.simplified_explanation);
+    const claimsData = await call(
+      "initial_claim_extraction", CLAIM_EXTRACTION_PROMPT, simplified.simplified_explanation
+    );
     let claims = claimsData.claims || [];
-
-    // 3. Verify claims against the ORIGINAL text
-    let verifyRes = await axios.post(`${process.env.NLI_SERVICE_URL || "http://localhost:5001"}/verify`, {
-      original: text,
-      claims
-    });
-    let verification = verifyRes.data;
-
-    // 4. Regeneration if support score is low
-    if (verification.support_score < 80) {
-      console.log(`🔄 Low score (${verification.support_score}%) → Regenerating`);
-
-      const regen = await callOpenAI(REGENERATION_PROMPT + text, simplified.simplified_explanation);
+    let verification = await verify("initial_verification", claims);
+    evaluation.initial = {
+      explanation: simplified.simplified_explanation,
+      claims: [...claims], verification: JSON.parse(JSON.stringify(verification))
+    };
+    saveEvaluation(evaluation);
+    if (verification.support_score < evaluation.config.support_threshold) {
+      evaluation.regenerated = true;
+      const regen = await call(
+        "regeneration", REGENERATION_PROMPT + text, simplified.simplified_explanation
+      );
       simplified.simplified_explanation = regen.corrected_explanation;
-
-      // Re-extract claims from the corrected simplified explanation
-      const newClaimsData = await callOpenAI(CLAIM_EXTRACTION_PROMPT, simplified.simplified_explanation);
+      const newClaimsData = await call(
+        "final_claim_extraction", CLAIM_EXTRACTION_PROMPT, simplified.simplified_explanation
+      );
       claims = newClaimsData.claims || [];
-
-      // Re-verify
-      verifyRes = await axios.post(`${process.env.NLI_SERVICE_URL || "http://localhost:5001"}/verify`, {
-        original: text,
-        claims
-      });
-      verification = verifyRes.data;
+      verification = await verify("final_verification", claims);
+      evaluation.regeneration_completed = true;
     }
-
-    // 5. Generate Quiz from original text
-    const quiz = await callOpenAI(QUIZ_PROMPT, text);
-
-    console.log(`✅ Processing completed. Support Score: ${verification.support_score}%`);
-
-    res.json({
-      simplified,
-      verification,
-      quiz
-    });
-
+    evaluation.final = {
+      explanation: simplified.simplified_explanation,
+      claims: [...claims], verification: JSON.parse(JSON.stringify(verification))
+    };
+    saveEvaluation(evaluation);
+    const quiz = await call("quiz", QUIZ_PROMPT, text);
+    evaluation.current_stage = "complete";
+    evaluation.completed_at = new Date().toISOString();
+    evaluation.server_elapsed_seconds = (performance.now() - started) / 1000;
+    saveEvaluation(evaluation);
+    res.json({ simplified, verification, quiz, evaluation });
   } catch (err) {
-    console.error("❌ Error:", err.message);
-    res.status(500).json({ error: err.message || "Server error" });
+    const nliFailure = /verification$/.test(evaluation.current_stage);
+    evaluation.error = {
+      stage: evaluation.current_stage,
+      message: err.message,
+      upstream_status: err.response?.status || null
+    };
+    evaluation.completed_at = new Date().toISOString();
+    evaluation.server_elapsed_seconds = (performance.now() - started) / 1000;
+    saveEvaluation(evaluation);
+    res.status(nliFailure ? 503 : 500).json({
+      error: nliFailure
+        ? "NLI verification unavailable. Check the local NLI service and try again."
+        : err.message || "Server error",
+      verification_available: nliFailure ? false : null,
+      evaluation
+    });
   }
 });
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, "0.0.0.0", () => {
+if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Backend running on port ${PORT}`);
   console.log("🚀 Feynman AI System ready");
 });
+module.exports = { app, evaluationConfig };
