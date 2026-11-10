@@ -12,6 +12,6 @@ RUN python -c "from transformers import pipeline; pipeline('text-classification'
 
 COPY . .
 
-EXPOSE 7860
+EXPOSE 5001
 
-CMD ["python", "app.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--timeout", "120", "app:app"]
